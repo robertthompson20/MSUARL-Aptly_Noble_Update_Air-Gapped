@@ -1,0 +1,68 @@
+FILTER='
+(
+  # ────────────────
+  # Exclusions: ALL cloud-related packages (KVM allowed)
+  # ────────────────
+  !(Name (~"azure")) &
+  !(Name (~"aws")) &
+  !(Name (~"amazon")) &
+  !(Name (~"ec2")) &
+  !(Name (~"gcp")) &
+  !(Name (~"google")) &
+  !(Name (~"oci")) &
+  !(Name (~"oracle")) &
+  !(Name (~"cloud-")) &
+  !(Name (~"cloudinit")) &
+  !(Name (~"cloud-init")) &
+  !(Name (~"cloud-utils")) &
+  !(Name (~"walinuxagent")) &
+  !(Name (~"google-compute-engine")) &
+  !(Name (~"oem-cloud")) &
+  !(Name (~"oem-")) &
+  !(Name (~"ubuntu-advantage")) &
+  !(Name (~"ubuntu-pro-client")) &
+  !(Name (~"ubuntu-pro")) &
+  !(Name (~"ua-tools")) &
+  !(Name (~"pro-apt")) &
+  !(Name (~"pro-client")) &
+  !(Name (~"linux-oracle")) &
+  !(Name (~"linux-gcp")) &
+  !(Name (~"linux-aws")) &
+  !(Name (~"linux-azure")) &
+  !(Name (~"raspi")) &
+  !(Name (~"raspberrypi")) &
+  !(Name (~"oem-config"))
+)
+&
+(
+  # ────────────────
+  # Inclusions: Hardware-related + KVM
+  # ────────────────
+  Name (~"^linux$") |
+  Name (~"^linux-") |
+  Name (~"linux-kvm") |
+  Name (~"linux-modules-extra") |
+  Name (~"firmware") |
+  Name (~"-firmware$") |
+  Name (~"^intel-") |
+  Name (~"^amd-") |
+  Name (~"^nvidia-") |
+  Name (~"nouveau") |
+  Name (~"radeon") |
+  Name (~"iucode-tool") |
+  Name (~"intel-microcode") |
+  Name (~"amd64-microcode") |
+  Name (~"xserver-xorg") |
+  Name (~"libdrm") |
+  Name (~"mesa") |
+  Name (~"mdadm") |
+  Name (~"nvme-cli") |
+  Name (~"usbutils") |
+  Name (~"pciutils") |
+  Name (~"hwdata") |
+  Name (~"lm-sensors") |
+  Name (~"lvm2") |
+  Name (~"multipath-tools") |
+  Name (~"cryptsetup") |
+  Name (~"libblockdev")
+)'

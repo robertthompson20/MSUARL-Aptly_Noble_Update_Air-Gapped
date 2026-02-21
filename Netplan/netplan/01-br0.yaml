@@ -1,0 +1,18 @@
+# This file creates the network bridge to allow VMs hosted to be on the host network.
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+    enp36s0f1:
+      dhcp4: no
+      dhcp6: no
+
+  bridges:
+    br0:
+      interfaces: [enp36s0f1]
+      dhcp4: no
+      dhcp6: no
+      parameters:
+        stp: false
+        forward-delay: 0
