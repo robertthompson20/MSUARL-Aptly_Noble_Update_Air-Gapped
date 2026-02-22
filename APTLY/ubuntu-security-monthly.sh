@@ -16,16 +16,17 @@
 #   - Smart mirror update caching (skips updates within 24 hours)
 #   - Cloud package filtering (AWS, Azure, GCP, Oracle, IBM, etc.)
 #   - Uses Ubuntu-Noble-Security mirror
-#   - Direct publish to external drive at /media/PSTPatches/apt-mirror/security
+#   - Direct publish to external drive at /mnt/PSTPatches
 #
 # Requirements:
 #   - aptly with /etc/aptly/aptly.conf configured
 #   - FileSystemPublishEndpoints: security configured in aptly.conf
-#   - External drive mounted at /media/PSTPatches/apt-mirror
+#   - External drive mounted at /mnt/PSTPatches
 #   - Sufficient disk space for snapshot creation and publishing
 #
 # Output:
-#   Published repository at /media/PSTPatches/apt-mirror/security/security/
+#   Published repository at /mnt/PSTPatches/apt-mirror/security/
+#   Client URL: http://<server-ip>/apt-mirror/security
 #   Snapshot name format: noble-security-YYYY-MM
 ################################################################################
 set -euo pipefail
@@ -33,8 +34,8 @@ set -euo pipefail
 APTLY_BIN=(aptly -config=/etc/aptly/aptly.conf)
 
 # Publish root on removable media / air-gap staging
-PUBLISH_ROOT="/media/PSTPatches/apt-mirror/security"
-PUBLISH_PREFIX="security"                # <-- yields http://server-ip/security
+PUBLISH_ROOT="/mnt/PSTPatches"
+PUBLISH_PREFIX="apt-mirror/security"     # <-- yields http://server-ip/apt-mirror/security
 PUBLISH_DISTRIBUTION="noble-security"
 COMPONENTS="main,universe,multiverse,restricted"
 
