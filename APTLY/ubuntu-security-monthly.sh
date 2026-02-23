@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # Name: ubuntu-security-monthly.sh
-# Version: 1.0
+# Version: 2.0
 # Usage: ./ubuntu-security-monthly.sh
 # Created by: Robert Thompson
 # Date: February 2026
@@ -9,14 +9,16 @@
 # Description:
 #   Creates monthly security snapshots from Ubuntu Noble Security mirror,
 #   excludes cloud-specific packages, and publishes to external filesystem
-#   endpoint for air-gapped deployment.
+#   endpoint for air-gapped deployment. Processes each component separately
+#   to maintain proper multi-component repository structure.
 #
 # Features:
 #   - Automatic monthly tagging (YYYY-MM format)
 #   - Smart mirror update caching (skips updates within 24 hours)
 #   - Cloud package filtering (AWS, Azure, GCP, Oracle, IBM, etc.)
-#   - Uses Ubuntu-Noble-Security mirror
-#   - Direct publish to external drive at /mnt/PSTPatches
+#   - Component-based processing (main, universe, multiverse, restricted)
+#   - Multi-component publish with proper directory structure
+#   - Direct publish to external drive at /mnt/PSTPatches/apt-mirror/security
 #
 # Requirements:
 #   - aptly with /etc/aptly/aptly.conf configured
@@ -27,30 +29,26 @@
 # Output:
 #   Published repository at /mnt/PSTPatches/apt-mirror/security/
 #   Client URL: http://<server-ip>/apt-mirror/security
-#   Snapshot name format: noble-security-YYYY-MM
+#   Snapshot name format: noble-security-YYYY-MM-{component}
+#   Example: noble-security-2026-02-main, noble-security-2026-02-universe, etc.
 ################################################################################
 set -euo pipefail
 
 APTLY_BIN=(aptly -config=/etc/aptly/aptly.conf)
 
-# Publish root on removable media / air-gap staging
-PUBLISH_ROOT="/mnt/PSTPatches"
-PUBLISH_PREFIX="apt-mirror/security"     # <-- yields http://server-ip/apt-mirror/security
+# Publish root on removable media / air-gap staging (matches aptly.conf)
+PUBLISH_ROOT="/mnt/PSTPatches/apt-mirror/security"
+PUBLISH_PREFIX=""                        # <-- no prefix, publishes at root
 PUBLISH_DISTRIBUTION="noble-security"
-COMPONENTS="main,universe,multiverse,restricted"
+COMPONENTS="main,restricted,universe,multiverse"
 
 # Ensure target directory exists
 mkdir -p "${PUBLISH_ROOT}"
 
 DIST="noble"
 
-# Mirrors to include: noble-security (all components)
-MIRRORS=(
-  "ubuntu-noble-security-main"
-  "ubuntu-noble-security-restricted"
-  "ubuntu-noble-security-universe"
-  "ubuntu-noble-security-multiverse"
-)
+# Component structure: noble-security per component
+COMPONENTS_LIST=("main" "restricted" "universe" "multiverse")
 
 # Filter excluding cloud-specific packages
 EXCLUDE_CLOUD_FILTER='!(Name (~ "azure|aws|amazon|ec2|gcp|google|oci|oracle|cloud-|cloudinit|cloud-init|cloud-utils|walinuxagent|google-compute-engine|oem-cloud|oem-|ubuntu-advantage|ubuntu-pro|ua-tools|pro-apt|pro-client|linux-oracle|linux-gcp|linux-aws|linux-azure|raspi|raspberrypi"))'
@@ -59,17 +57,16 @@ EXCLUDE_CLOUD_FILTER='!(Name (~ "azure|aws|amazon|ec2|gcp|google|oci|oracle|clou
 YEAR_MONTH="$(date +%Y-%m)"
 TAG="${YEAR_MONTH}"
 
-SNAPSHOT_NAME="${DIST}-security-${TAG}"
-
-echo "[INFO] Creating security snapshot: ${SNAPSHOT_NAME}"
+echo "[INFO] Creating security snapshots for: ${TAG}"
 
 # Track mirror update timestamps to avoid redundant updates
 MIRROR_TIMESTAMP_DIR="/var/cache/aptly-mirror-timestamps"
 mkdir -p "${MIRROR_TIMESTAMP_DIR}"
 
-# Update mirrors before creating snapshots (skip if updated within 24 hours)
-for m in "${MIRRORS[@]}"; do
-  TIMESTAMP_FILE="${MIRROR_TIMESTAMP_DIR}/${m}.timestamp"
+# Function to update a mirror if needed
+update_mirror_if_needed() {
+  local mirror_name="$1"
+  TIMESTAMP_FILE="${MIRROR_TIMESTAMP_DIR}/${mirror_name}.timestamp"
   NOW=$(date +%s)
   LAST_UPDATE=0
 
@@ -80,65 +77,98 @@ for m in "${MIRRORS[@]}"; do
   HOURS_SINCE_UPDATE=$(( ($NOW - $LAST_UPDATE) / 3600 ))
 
   if [[ $LAST_UPDATE -eq 0 ]] || [[ $HOURS_SINCE_UPDATE -ge 24 ]]; then
-    echo "[INFO] Updating mirror: $m (last updated: $HOURS_SINCE_UPDATE hours ago)"
-    "${APTLY_BIN[@]}" mirror update "$m" && touch "${TIMESTAMP_FILE}"
+    echo "[INFO] Updating mirror: $mirror_name (last updated: $HOURS_SINCE_UPDATE hours ago)"
+    "${APTLY_BIN[@]}" mirror update "$mirror_name" && touch "${TIMESTAMP_FILE}"
   else
-    echo "[INFO] Skipping mirror update: $m (updated $HOURS_SINCE_UPDATE hours ago, within 24h window)"
+    echo "[INFO] Skipping mirror update: $mirror_name (updated $HOURS_SINCE_UPDATE hours ago, within 24h window)"
   fi
+}
+
+# Arrays to hold final component snapshots
+COMPONENT_SNAPSHOTS=()
+
+# Process each component separately
+for comp in "${COMPONENTS_LIST[@]}"; do
+  MIRROR_NAME="ubuntu-noble-security-${comp}"
+  FINAL_SNAP="${DIST}-security-${TAG}-${comp}"
+
+  echo "[INFO] Processing component: ${comp}"
+
+  # Update mirror for this component
+  update_mirror_if_needed "${MIRROR_NAME}"
+
+  # Check if final snapshot already exists
+  if "${APTLY_BIN[@]}" snapshot show "${FINAL_SNAP}" >/dev/null 2>&1; then
+    echo "[INFO] Snapshot exists, skipping create: ${FINAL_SNAP}"
+  else
+    # Create temporary snapshots
+    TEMP_SNAP="${FINAL_SNAP}-temp"
+    FILTERED_SNAP="${FINAL_SNAP}-filtered"
+
+    # Clean up any leftover snapshots
+    "${APTLY_BIN[@]}" snapshot drop "${TEMP_SNAP}" 2>/dev/null || true
+    "${APTLY_BIN[@]}" snapshot drop "${FILTERED_SNAP}" 2>/dev/null || true
+
+    # Create snapshot from mirror
+    echo "[INFO] Creating temporary snapshot: ${TEMP_SNAP}"
+    "${APTLY_BIN[@]}" snapshot create "${TEMP_SNAP}" from mirror "${MIRROR_NAME}"
+
+    # Filter out cloud packages
+    echo "[INFO] Filtering snapshot: ${FILTERED_SNAP}"
+    "${APTLY_BIN[@]}" snapshot filter "${TEMP_SNAP}" "${FILTERED_SNAP}" \
+      "${EXCLUDE_CLOUD_FILTER}" -with-deps
+
+    # Rename filtered snapshot to final name
+    echo "[INFO] Creating final snapshot: ${FINAL_SNAP}"
+    "${APTLY_BIN[@]}" snapshot rename "${FILTERED_SNAP}" "${FINAL_SNAP}"
+  fi
+
+  COMPONENT_SNAPSHOTS+=("${FINAL_SNAP}")
 done
 
-if "${APTLY_BIN[@]}" snapshot show "${SNAPSHOT_NAME}" >/dev/null 2>&1; then
-  echo "[INFO] Snapshot exists, skipping create: ${SNAPSHOT_NAME}"
+echo "[INFO] Publishing multi-component repository to root path"
+
+# Use . for root prefix when PUBLISH_PREFIX is empty
+APTLY_PREFIX="${PUBLISH_PREFIX:-.}"
+
+# Check if there's an existing publish at this location
+EXISTING_PUBLISH=$("${APTLY_BIN[@]}" publish list 2>/dev/null | grep "filesystem:security:${APTLY_PREFIX}" || true)
+
+if [[ -n "${EXISTING_PUBLISH}" ]]; then
+  # Check if it's a multi-component publish with 4 components (the new format)
+  if echo "${EXISTING_PUBLISH}" | grep -q "\[${PUBLISH_DISTRIBUTION}\]" && \
+     echo "${EXISTING_PUBLISH}" | grep -Eq "(main|restricted|universe|multiverse).*:.*\[.*\]"; then
+    echo "[INFO] Existing multi-component publish found; switching to new snapshots"
+    "${APTLY_BIN[@]}" publish switch \
+      -component="${COMPONENTS}" \
+      -skip-signing \
+      "${PUBLISH_DISTRIBUTION}" \
+      "filesystem:security:${APTLY_PREFIX}" \
+      "${COMPONENT_SNAPSHOTS[@]}"
+  else
+    # Old format (merged single component) - drop and recreate
+    echo "[INFO] Existing publish found in old format; dropping and recreating"
+    "${APTLY_BIN[@]}" publish drop "${PUBLISH_DISTRIBUTION}" "filesystem:security:${APTLY_PREFIX}"
+    
+    echo "[INFO] Creating new multi-component publish"
+    "${APTLY_BIN[@]}" publish snapshot \
+      -distribution="${PUBLISH_DISTRIBUTION}" \
+      -component="${COMPONENTS}" \
+      -skip-signing \
+      "${COMPONENT_SNAPSHOTS[@]}" \
+      "filesystem:security:${APTLY_PREFIX}"
+  fi
 else
-  # Clean up any leftover temporary snapshots from previous runs
-  echo "[INFO] Cleaning up temporary snapshots from previous runs"
-  for m in "${MIRRORS[@]}"; do
-    temp_snap="${SNAPSHOT_NAME}-${m}"
-    filtered_snap="${SNAPSHOT_NAME}-${m}-filtered"
-    "${APTLY_BIN[@]}" snapshot drop "${temp_snap}" 2>/dev/null || true
-    "${APTLY_BIN[@]}" snapshot drop "${filtered_snap}" 2>/dev/null || true
-  done
-
-  # Create temporary snapshots from each mirror, then merge them
-  temp_snapshots=()
-  for m in "${MIRRORS[@]}"; do
-    temp_snap="${SNAPSHOT_NAME}-${m}"
-    filtered_snap="${SNAPSHOT_NAME}-${m}-filtered"
-    echo "[INFO] Creating temporary snapshot: ${temp_snap}"
-    "${APTLY_BIN[@]}" snapshot create "${temp_snap}" from mirror "${m}"
-
-    echo "[INFO] Filtering snapshot: ${filtered_snap}"
-    "${APTLY_BIN[@]}" snapshot filter "${temp_snap}" "${filtered_snap}" \
-      "${EXCLUDE_CLOUD_FILTER}" \
-      -with-deps
-
-    temp_snapshots+=("${filtered_snap}")
-  done
-
-  # Merge all filtered temporary snapshots into final snapshot
-  echo "[INFO] Merging filtered snapshots into: ${SNAPSHOT_NAME}"
-  "${APTLY_BIN[@]}" snapshot merge "${SNAPSHOT_NAME}" "${temp_snapshots[@]}"
-fi
-
-echo "[INFO] Publishing to fixed URL path /${PUBLISH_PREFIX} (switch if already published)"
-
-# If not published yet, publish; otherwise switch in-place (URL stays /security)
-if "${APTLY_BIN[@]}" publish list 2>/dev/null | grep -q "filesystem:security:${PUBLISH_PREFIX}"; then
-  echo "[INFO] Existing publish found; switching /${PUBLISH_PREFIX} to snapshot ${SNAPSHOT_NAME}"
-  "${APTLY_BIN[@]}" publish switch \
-    -skip-signing \
-    "${PUBLISH_DISTRIBUTION}" \
-    "filesystem:security:${PUBLISH_PREFIX}" \
-    "${SNAPSHOT_NAME}"
-else
-  echo "[INFO] No existing publish; publishing /${PUBLISH_PREFIX} from snapshot ${SNAPSHOT_NAME}"
+  echo "[INFO] No existing publish; creating new multi-component publish"
   "${APTLY_BIN[@]}" publish snapshot \
     -distribution="${PUBLISH_DISTRIBUTION}" \
+    -component="${COMPONENTS}" \
     -skip-signing \
-    "${SNAPSHOT_NAME}" \
-    "filesystem:security:${PUBLISH_PREFIX}"
+    "${COMPONENT_SNAPSHOTS[@]}" \
+    "filesystem:security:${APTLY_PREFIX}"
 fi
 
 echo "[INFO] Done."
-echo "[INFO] Filesystem output: ${PUBLISH_ROOT}/${PUBLISH_PREFIX}/"
-echo "[INFO] Client URL: http://<server-ip>/${PUBLISH_PREFIX}"
+echo "[INFO] Filesystem output: ${PUBLISH_ROOT}/"
+echo "[INFO] Component snapshots: ${COMPONENT_SNAPSHOTS[*]}"
+echo "[INFO] Client URL: http://<server-ip>/apt-mirror/security"
