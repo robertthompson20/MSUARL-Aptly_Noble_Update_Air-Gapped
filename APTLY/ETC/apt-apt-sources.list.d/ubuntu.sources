@@ -1,11 +1,11 @@
 Types: deb
-URIs: http://us.archive.ubuntu.com/ubuntu/
-Suites: noble noble-updates
+URIs: http://MGMT:8888/
+Suites: noble
 Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+Trusted: yes
 
 Types: deb
-URIs: http://security.ubuntu.com/ubuntu/
+URIs: http://MGMT:8888/
 Suites: noble-security
 Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+Trusted: yes
