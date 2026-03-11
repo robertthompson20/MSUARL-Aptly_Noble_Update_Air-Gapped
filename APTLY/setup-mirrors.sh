@@ -11,16 +11,15 @@
 #   - ubuntu-security-monthly.sh (security mirrors)
 #   - snapshot-archive-semiannual.sh (ubuntu + ubuntu-updates mirrors)
 #
-# This script creates 12 mirrors:
+# This script creates 10 mirrors:
 #   Ubuntu Archive (8 mirrors):
 #     - Ubuntu-Noble-Main, Ubuntu-Noble-Restricted,
 #       Ubuntu-Noble-Universe, Ubuntu-Noble-Multiverse
 #     - Ubuntu-Noble-Updates-Main, Ubuntu-Noble-Updates-Restricted,
 #       Ubuntu-Noble-Updates-Universe, Ubuntu-Noble-Updates-Multiverse
 #
-#   Ubuntu Security (4 mirrors):
-#     - ubuntu-noble-security-main, ubuntu-noble-security-restricted,
-#       ubuntu-noble-security-universe, ubuntu-noble-security-multiverse
+#   Ubuntu Security (2 mirrors):
+#     - ubuntu-noble-security-main, ubuntu-noble-security-restricted
 #
 # Requirements:
 #   - aptly installed
@@ -79,12 +78,12 @@ create_mirror_if_needed() {
     local repo_url="$2"
     local distribution="$3"
     local component="$4"
-    
+
     if "${APTLY_BIN[@]}" mirror show "$mirror_name" &>/dev/null; then
         echo -e "${YELLOW}  ⊙ Mirror already exists: ${mirror_name}${NC}"
         return 0
     fi
-    
+
     echo -e "${BLUE}  + Creating mirror: ${mirror_name}${NC}"
     if "${APTLY_BIN[@]}" mirror create \
         --architectures=amd64 \
@@ -100,7 +99,7 @@ create_mirror_if_needed() {
     fi
 }
 
-# Track success/failure
+# Track success/failure — use pre-increment (++VAR) to avoid set -e false exit when count is 0
 CREATED=0
 ALREADY_EXISTS=0
 FAILED=0
@@ -112,23 +111,23 @@ echo ""
 
 # Ubuntu Noble Base mirrors (capitalized names for semiannual script)
 COMPONENTS=("Main" "Restricted" "Universe" "Multiverse")
-ARCHIVE_URL="http://archive.ubuntu.com/ubuntu"
+ARCHIVE_URL="http://192.168.200.251:8888/ubuntu/"  # local aptly mirror (noble + noble-updates)
 
 for comp in "${COMPONENTS[@]}"; do
     mirror_name="Ubuntu-Noble-${comp}"
     component_lower=$(echo "$comp" | tr '[:upper:]' '[:lower:]')
-    
+
     if create_mirror_if_needed "$mirror_name" "$ARCHIVE_URL" "noble" "$component_lower"; then
         if "${APTLY_BIN[@]}" mirror show "$mirror_name" &>/dev/null; then
             pkg_count=$("${APTLY_BIN[@]}" mirror show "$mirror_name" 2>/dev/null | grep 'Number of packages' | awk '{print $4}' || echo 0)
             if [[ "$pkg_count" -eq 0 ]]; then
-                ((CREATED++))
+                (( ++CREATED ))
             else
-                ((ALREADY_EXISTS++))
+                (( ++ALREADY_EXISTS ))
             fi
         fi
     else
-        ((FAILED++))
+        (( ++FAILED ))
     fi
 done
 
@@ -138,18 +137,18 @@ echo ""
 for comp in "${COMPONENTS[@]}"; do
     mirror_name="Ubuntu-Noble-Updates-${comp}"
     component_lower=$(echo "$comp" | tr '[:upper:]' '[:lower:]')
-    
+
     if create_mirror_if_needed "$mirror_name" "$ARCHIVE_URL" "noble-updates" "$component_lower"; then
         if "${APTLY_BIN[@]}" mirror show "$mirror_name" &>/dev/null; then
             pkg_count=$("${APTLY_BIN[@]}" mirror show "$mirror_name" 2>/dev/null | grep 'Number of packages' | awk '{print $4}' || echo 0)
             if [[ "$pkg_count" -eq 0 ]]; then
-                ((CREATED++))
+                (( ++CREATED ))
             else
-                ((ALREADY_EXISTS++))
+                (( ++ALREADY_EXISTS ))
             fi
         fi
     else
-        ((FAILED++))
+        (( ++FAILED ))
     fi
 done
 
@@ -160,23 +159,23 @@ echo "========================================================================"
 echo ""
 
 # Ubuntu Noble Security mirrors (lowercase names for security script)
-SECURITY_COMPONENTS=("main" "restricted" "universe" "multiverse")
-SECURITY_URL="http://security.ubuntu.com/ubuntu"
+SECURITY_COMPONENTS=("main" "restricted")          # universe/multiverse excluded from security
+SECURITY_URL="http://192.168.200.251:8888/ubuntu/"  # noble-security served under /ubuntu/ on local mirror
 
 for comp in "${SECURITY_COMPONENTS[@]}"; do
     mirror_name="ubuntu-noble-security-${comp}"
-    
+
     if create_mirror_if_needed "$mirror_name" "$SECURITY_URL" "noble-security" "$comp"; then
         if "${APTLY_BIN[@]}" mirror show "$mirror_name" &>/dev/null; then
             pkg_count=$("${APTLY_BIN[@]}" mirror show "$mirror_name" 2>/dev/null | grep 'Number of packages' | awk '{print $4}' || echo 0)
             if [[ "$pkg_count" -eq 0 ]]; then
-                ((CREATED++))
+                (( ++CREATED ))
             else
-                ((ALREADY_EXISTS++))
+                (( ++ALREADY_EXISTS ))
             fi
         fi
     else
-        ((FAILED++))
+        (( ++FAILED ))
     fi
 done
 
