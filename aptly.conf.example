@@ -1,0 +1,17 @@
+ {
+  "rootDir": "/path/to/aptly",
+  "architectures": ["amd64"],
+  "downloadConcurrency": 10,
+  "downloader": "grab",
+  "downloadRetries": 10,
+
+  "dependencyFollowSuggests": false,
+  "dependencyFollowRecommends": false,
+  "dependencyFollowAllVariants": false,
+  "dependencyFollowSource": false,
+
+  "downloadSourcePackages": false,
+  "gpgDisableSign": true,
+  "gpgDisableVerify": true,
+  "skipLegacyPool": true
+}
