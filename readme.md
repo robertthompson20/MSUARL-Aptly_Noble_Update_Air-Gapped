@@ -12,7 +12,60 @@ The design supports:
 
 ---
 
-## 0. Prerequisites - Install Upstream Aptly
+## 0. Files in This Repo
+
+```text
+AptlyV3/
+├── aptly-clean.sh
+├── aptly.conf.example
+├── create-aptly-mirror.sh
+├── readme.md
+├── v2-aptly-update-publish.sh
+└── validate-aptly-publish.sh
+```
+
+### 0.1 `create-aptly-mirror.sh`
+
+Creates the initial mirrors and performs the first mirror updates:
+
+- `ubuntu-noble` -> `noble` with `main restricted universe multiverse`
+- `ubuntu-noble-updates` -> `noble-updates` with `main restricted`
+- `ubuntu-noble-security` -> `noble-security` with `main restricted`
+
+Run this once during initial setup, or again only if you intentionally destroy and rebuild mirrors.
+
+### 0.2 `v2-aptly-update-publish.sh`
+
+- Checks whether mirrors are older than 24 hours and updates only if needed
+- Creates new date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
+- Performs the initial publish if no publishes exist yet
+- Uses `aptly publish switch` on later runs
+- Publishes everything under a single component: `main`
+
+This is the main monthly workflow script.
+
+### 0.3 `validate-aptly-publish.sh`
+
+- Confirms that each distribution (`noble`, `noble-updates`, `noble-security`) has both `Release` and `main/binary-amd64/Packages.gz`
+- Checks that `neofetch`, `nvidia-driver-550`, and `ttf-mscorefonts-installer` appear under `main`
+
+This validates that merged components are published correctly.
+
+### 0.4 `aptly-clean.sh`
+
+- Drops published repos: `ubuntu/noble`, `ubuntu/noble-updates`, and `ubuntu/noble-security`
+- Drops snapshots whose names start with `ubuntu-noble`
+- Leaves mirrors intact so packages are not re-downloaded
+
+Use it only when:
+
+- Publish state becomes inconsistent
+- You change the publish layout or schema
+- You want a clean rebuild of publishes and snapshots
+
+---
+
+## 1. Prerequisites - Install Upstream Aptly
 
 Ubuntu's Aptly package (`aptly 1.5.0+ds1-2ubuntu0...`) is patched and has caused parsing issues and feature limitations in this workflow.
 
@@ -20,7 +73,7 @@ This setup expects Aptly to be installed from `repo.aptly.info` instead.
 
 Keep your existing `/etc/aptly/aptly.conf` if you already have one. It defines `rootDir` and preserves your mirrors and snapshots. This repo also includes `aptly.conf.example` for new setups.
 
-### 0.1 Remove Ubuntu's Aptly
+### 1.1 Remove Ubuntu's Aptly
 
 ```bash
 sudo apt remove --purge aptly
@@ -33,14 +86,14 @@ aptly version
 # should say: command not found
 ```
 
-### 0.2 Add the Official Aptly Repository
+### 1.2 Add the Official Aptly Repository
 
 ```bash
 echo "deb http://repo.aptly.info/ squeeze main" | sudo tee /etc/apt/sources.list.d/aptly.list
 curl -fsSL https://www.aptly.info/pubkey.txt | sudo tee /etc/apt/trusted.gpg.d/aptly.asc > /dev/null
 ```
 
-### 0.3 Pin Aptly to Prefer Upstream and Block Ubuntu's Build
+### 1.3 Pin Aptly to Prefer Upstream and Block Ubuntu's Build
 
 Positive pin for `repo.aptly.info`:
 
@@ -62,13 +115,13 @@ Pin-Priority: -1
 EOF
 ```
 
-### 0.4 Update APT
+### 1.4 Update APT
 
 ```bash
 sudo apt update
 ```
 
-### 0.5 Verify APT Will Install Aptly from `repo.aptly.info`
+### 1.5 Verify APT Will Install Aptly from `repo.aptly.info`
 
 ```bash
 apt-cache policy aptly
@@ -79,7 +132,7 @@ You should see something like:
 - `Candidate: 1.5.0` from `http://repo.aptly.info squeeze/main`
 - Ubuntu versions (`1.5.0+ds1-2ubuntu0...`) shown with priority `-1`
 
-### 0.6 Install Upstream Aptly
+### 1.6 Install Upstream Aptly
 
 ```bash
 sudo apt install aptly
@@ -96,7 +149,7 @@ Ensure the installed (`***`) version comes from `repo.aptly.info`, not Ubuntu.
 
 ---
 
-## 1. Aptly Configuration (`aptly.conf.example`)
+## 2. Aptly Configuration (`aptly.conf.example`)
 
 This repo includes a reference config: `aptly.conf.example`.
 
@@ -124,59 +177,6 @@ Check that Aptly sees it:
 ```bash
 aptly -config=/etc/aptly/aptly.conf mirror list
 ```
-
----
-
-## 2. Files in This Repo
-
-```text
-AptlyV3/
-├── aptly-clean.sh
-├── aptly.conf.example
-├── create-aptly-mirror.sh
-├── readme.md
-├── v2-aptly-update-publish.sh
-└── validate-aptly-publish.sh
-```
-
-### 2.1 `create-aptly-mirror.sh`
-
-Creates the initial mirrors and performs the first mirror updates:
-
-- `ubuntu-noble` -> `noble` with `main restricted universe multiverse`
-- `ubuntu-noble-updates` -> `noble-updates` with `main restricted`
-- `ubuntu-noble-security` -> `noble-security` with `main restricted`
-
-Run this once during initial setup, or again only if you intentionally destroy and rebuild mirrors.
-
-### 2.2 `v2-aptly-update-publish.sh`
-
-- Checks whether mirrors are older than 24 hours and updates only if needed
-- Creates new date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
-- Performs the initial publish if no publishes exist yet
-- Uses `aptly publish switch` on later runs
-- Publishes everything under a single component: `main`
-
-This is the main monthly workflow script.
-
-### 2.3 `validate-aptly-publish.sh`
-
-- Confirms that each distribution (`noble`, `noble-updates`, `noble-security`) has both `Release` and `main/binary-amd64/Packages.gz`
-- Checks that `neofetch`, `nvidia-driver-550`, and `ttf-mscorefonts-installer` appear under `main`
-
-This validates that merged components are published correctly.
-
-### 2.4 `aptly-clean.sh`
-
-- Drops published repos: `ubuntu/noble`, `ubuntu/noble-updates`, and `ubuntu/noble-security`
-- Drops snapshots whose names start with `ubuntu-noble`
-- Leaves mirrors intact so packages are not re-downloaded
-
-Use it only when:
-
-- Publish state becomes inconsistent
-- You change the publish layout or schema
-- You want a clean rebuild of publishes and snapshots
 
 ---
 
