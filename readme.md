@@ -15,7 +15,6 @@ The design supports:
 ## 0. Files in This Repo
 
 ```text
-AptlyV3/
 ├── aptly-clean.sh
 ├── aptly.conf.example
 ├── create-aptly-mirror.sh
