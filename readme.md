@@ -18,7 +18,6 @@ The design supports:
 ├── aptly-clean.sh
 ├── aptly.conf.example
 ├── create-aptly-mirror.sh
-├── readme.md
 ├── v2-aptly-update-publish.sh
 └── validate-aptly-publish.sh
 ```
