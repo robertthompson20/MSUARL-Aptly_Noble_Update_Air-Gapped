@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE="/mnt/Ext3TB/aptly/public/ubuntu/dists"
+CONFIG="${APTLY_CONFIG:-/etc/aptly/aptly.conf}"
+ROOT_DIR_FROM_CONFIG="$(awk -F '"' '/"rootDir"/ {print $4; exit}' "$CONFIG")"
+ROOT_DIR="${APTLY_ROOT_DIR:-$ROOT_DIR_FROM_CONFIG}"
+BASE="$ROOT_DIR/public/ubuntu/dists"
+
+if [[ -z "$ROOT_DIR" ]]; then
+    echo "[ERROR] Unable to determine rootDir from $CONFIG"
+    echo "Set APTLY_ROOT_DIR explicitly or add rootDir to the Aptly config."
+    exit 1
+fi
 
 check_file() {
     local file="$1"
@@ -13,6 +22,7 @@ check_file() {
 }
 
 echo "=== Checking published distributions ==="
+echo "Using rootDir: $ROOT_DIR"
 echo
 
 for DIST in noble noble-updates noble-security; do

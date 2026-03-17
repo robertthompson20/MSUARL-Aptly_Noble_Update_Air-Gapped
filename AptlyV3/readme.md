@@ -117,6 +117,8 @@ sudo chown root:root /etc/aptly/aptly.conf
 sudo chmod 644 /etc/aptly/aptly.conf
 ```
 
+All scripts default to `/etc/aptly/aptly.conf`, but you can override that with `APTLY_CONFIG=/path/to/aptly.conf` if your config lives elsewhere. The validation script also derives `rootDir` from that config automatically, or you can override it with `APTLY_ROOT_DIR=/path/to/aptly`.
+
 Check that Aptly sees it:
 
 ```bash

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="/etc/aptly/aptly.conf"
+CONFIG="${APTLY_CONFIG:-/etc/aptly/aptly.conf}"
 
 # Noble base: full components for install-time packages
 aptly -config="$CONFIG" \

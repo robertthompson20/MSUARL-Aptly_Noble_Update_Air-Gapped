@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="/etc/aptly/aptly.conf"
+CONFIG="${APTLY_CONFIG:-/etc/aptly/aptly.conf}"
 DATE="$(date +%Y%m%d)"
 MAX_AGE_SECONDS=$((24 * 60 * 60))
 
