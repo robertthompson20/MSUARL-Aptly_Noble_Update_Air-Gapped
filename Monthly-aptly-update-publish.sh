@@ -1,9 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ============================================
+# Script: Monthly-aptly-update-publish.sh
+# Version: 1.0
+# Purpose: Update Aptly mirrors, create/reuse daily snapshots, and publish/switch snapshots
+# Usage: Run as a privileged user with access to Aptly config and publish repo
+# Logs: stdout/stderr streamed to console and /var/log/aptly via tee
+# Changes: Idempotent snapshot handling and fast no-op exit when already up to date
+# Updated: 2026-04-02
+# ============================================
+
 CONFIG="${APTLY_CONFIG:-/etc/aptly/aptly.conf}"
 DATE="$(date +%Y%m%d)"
 MAX_AGE_SECONDS=$((24 * 60 * 60))
+LOG_DIR="${APTLY_LOG_DIR:-/var/log/aptly}"
+LOG_FILE="${LOG_DIR}/monthly-aptly-update-publish-$(date +%Y%m%d-%H%M%S).log"
+
+# Set up unified logging so all script output is visible and persisted.
+setup_logging() {
+  mkdir -p "$LOG_DIR"
+  touch "$LOG_FILE"
+  exec > >(tee -a "$LOG_FILE") 2>&1
+  echo "Logging to $LOG_FILE"
+}
+
+setup_logging
 
 # -------------------------------
 # Check if mirror needs update
@@ -45,14 +67,23 @@ mirror_update_with_retry() {
 }
 
 # -------------------------------
-# Drop snapshot if exists
+# Snapshot helpers
 # -------------------------------
-drop_snapshot_if_exists() {
+snapshot_exists() {
   local snap="$1"
-  if aptly -config="$CONFIG" snapshot show "$snap" >/dev/null 2>&1; then
-    echo "Dropping existing snapshot $snap..."
-    aptly -config="$CONFIG" snapshot drop -force "$snap"
+  aptly -config="$CONFIG" snapshot show "$snap" >/dev/null 2>&1
+}
+
+create_snapshot_if_missing() {
+  local snap="$1"
+  local mirror="$2"
+
+  if snapshot_exists "$snap"; then
+    echo "Snapshot $snap already exists; reusing."
+    return 0
   fi
+
+  aptly -config="$CONFIG" snapshot create "$snap" from mirror "$mirror"
 }
 
 # -------------------------------
@@ -62,13 +93,25 @@ needs_initial_publish() {
   ! aptly -config="$CONFIG" publish list >/dev/null 2>&1
 }
 
+publish_uses_snapshot() {
+  local distribution="$1"
+  local snap="$2"
+
+  aptly -config="$CONFIG" publish list 2>/dev/null |
+    grep -F "ubuntu/${distribution}" |
+    grep -F "[${snap}]"
+}
+
 # -------------------------------
 # Update mirrors (conditional)
 # -------------------------------
+MIRRORS_UPDATED=false
+
 for MIRROR in ubuntu-noble ubuntu-noble-updates ubuntu-noble-security; do
   if mirror_needs_update "$MIRROR"; then
     echo "Updating mirror $MIRROR..."
     mirror_update_with_retry "$MIRROR"
+    MIRRORS_UPDATED=true
   else
     echo "Mirror $MIRROR updated <24h ago; skipping."
   fi
@@ -82,18 +125,11 @@ SNAP_UPDATES="ubuntu-noble-${DATE}-updates"
 SNAP_SECURITY="ubuntu-noble-${DATE}-security"
 
 # -------------------------------
-# Drop today's snapshots
+# Create snapshots (idempotent)
 # -------------------------------
-drop_snapshot_if_exists "$SNAP_MAIN"
-drop_snapshot_if_exists "$SNAP_UPDATES"
-drop_snapshot_if_exists "$SNAP_SECURITY"
-
-# -------------------------------
-# Create new snapshots
-# -------------------------------
-aptly -config="$CONFIG" snapshot create "$SNAP_MAIN" from mirror ubuntu-noble
-aptly -config="$CONFIG" snapshot create "$SNAP_UPDATES" from mirror ubuntu-noble-updates
-aptly -config="$CONFIG" snapshot create "$SNAP_SECURITY" from mirror ubuntu-noble-security
+create_snapshot_if_missing "$SNAP_MAIN" ubuntu-noble
+create_snapshot_if_missing "$SNAP_UPDATES" ubuntu-noble-updates
+create_snapshot_if_missing "$SNAP_SECURITY" ubuntu-noble-security
 
 # -------------------------------
 # INITIAL PUBLISH
@@ -127,6 +163,14 @@ if ! aptly -config="$CONFIG" publish list >/dev/null 2>&1; then
     ubuntu
 
   echo "Initial publish complete."
+  exit 0
+fi
+
+if [[ "$MIRRORS_UPDATED" == "false" ]] &&
+  publish_uses_snapshot noble "$SNAP_MAIN" &&
+  publish_uses_snapshot noble-updates "$SNAP_UPDATES" &&
+  publish_uses_snapshot noble-security "$SNAP_SECURITY"; then
+  echo "All publishes already point to today's snapshots and mirrors were unchanged; no switch needed."
   exit 0
 fi
 

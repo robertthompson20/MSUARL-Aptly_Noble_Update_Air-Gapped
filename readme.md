@@ -18,7 +18,7 @@ The design supports:
 ├── aptly-clean.sh
 ├── aptly.conf.example
 ├── create-aptly-mirror.sh
-├── v2-aptly-update-publish.sh
+├── Monthly-aptly-update-publish.sh
 └── validate-aptly-publish.sh
 ```
 
@@ -32,13 +32,15 @@ Creates the initial mirrors and performs the first mirror updates:
 
 Run this once during initial setup, or again only if you intentionally destroy and rebuild mirrors.
 
-### 0.2 `v2-aptly-update-publish.sh`
+### 0.2 `Monthly-aptly-update-publish.sh`
 
 - Checks whether mirrors are older than 24 hours and updates only if needed
-- Creates new date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
+- Creates or reuses date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
 - Performs the initial publish if no publishes exist yet
 - Uses `aptly publish switch` on later runs
+- Includes a fast no-op path when mirrors are unchanged and publishes already point to today's snapshots
 - Publishes everything under a single component: `main`
+- Logs all stdout/stderr to both console and `/var/log/aptly` (override with `APTLY_LOG_DIR`)
 
 This is the main monthly workflow script.
 
@@ -208,7 +210,7 @@ aptly -config=/etc/aptly/aptly.conf mirror list
 ### 3.3 Run the Monthly Script for the First Publish
 
 ```bash
-sudo ./v2-aptly-update-publish.sh
+sudo ./Monthly-aptly-update-publish.sh
 ```
 
 On the first run, this script will:
@@ -241,12 +243,14 @@ After first-time setup, the monthly process is simple.
 ### 4.1 Run Monthly Update and Publish
 
 ```bash
-sudo ./v2-aptly-update-publish.sh
+sudo ./Monthly-aptly-update-publish.sh
 ```
 
 - Updates mirrors only if they are older than 24 hours
-- Creates new snapshots with the current date
+- Creates or reuses snapshots with the current date
 - Uses `aptly publish switch` to move `noble`, `noble-updates`, and `noble-security` to the new snapshots
+- Exits early with no switch when everything is already current
+- Writes a timestamped run log to `/var/log/aptly`
 
 ### 4.2 Validate
 
@@ -260,7 +264,7 @@ If validation passes, the monthly update is complete.
 
 ```bash
 sudo ./aptly-clean.sh
-sudo ./v2-aptly-update-publish.sh
+sudo ./Monthly-aptly-update-publish.sh
 sudo ./validate-aptly-publish.sh
 ```
 
@@ -300,4 +304,4 @@ If that succeeds and shows `noble/main` from your mirror, the merged-component s
 - Do not manually delete files under `<rootDir>/public`; always use Aptly commands.
 - Back up regularly: `<rootDir>/db`, `<rootDir>/pool`, and `/etc/aptly/aptly.conf`
 - Mirrors matching `ubuntu-noble*` rarely need to be recreated; `create-aptly-mirror.sh` is for first-time setup only.
-- Monthly operations should be driven by `v2-aptly-update-publish.sh` and `validate-aptly-publish.sh`
+- Monthly operations should be driven by `Monthly-aptly-update-publish.sh` and `validate-aptly-publish.sh`
