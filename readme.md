@@ -292,6 +292,20 @@ sudo apt update
 
 Replace `<server-ip>` with the Aptly server IP, for example `192.168.200.251`.
 
+If a client should consume a locally mounted/offline copy instead of HTTP, use this alternate file-based source list (this overwrites the same `noble-offline.list` file):
+
+```bash
+cat <<EOF | sudo tee /etc/apt/sources.list.d/noble-offline.list
+deb [trusted=yes] file:/<path-to-repo>/ubuntu noble main
+deb [trusted=yes] file:/<path-to-repo>/ubuntu noble-updates main
+deb [trusted=yes] file:/<path-to-repo>/ubuntu noble-security main
+EOF
+
+sudo apt update
+```
+
+Replace `<path-to-repo>` with the absolute path containing the published `ubuntu` directory.
+
 Quick test:
 
 ```bash
