@@ -6,7 +6,11 @@ The design supports:
 
 - Mirroring and publishing once per month
 - Distributions: `noble`, `noble-updates`, `noble-security`
-- All components (`main`, `restricted`, `universe`, `multiverse`) merged into a single published component: `main`
+- Published repositories use a single published component: `main`
+- Mirror content by distribution:
+  - `noble`: `main`, `restricted`, `universe`, `multiverse`
+  - `noble-updates`: `main`, `restricted`
+  - `noble-security`: `main`, `restricted`
 - Use in an air-gapped environment with clients configured as `[trusted=yes]`
 - Proxmox LXC clients for testing
 
