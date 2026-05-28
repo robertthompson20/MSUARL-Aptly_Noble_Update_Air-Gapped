@@ -36,7 +36,6 @@ mirror_exists() {
   local mirror="$1"
   aptly -config="$CONFIG" mirror show "$mirror" >/dev/null 2>&1
 }
-
 mirror_needs_update() {
   local mirror="$1"
   local last_line last_epoch now_epoch age
@@ -131,7 +130,6 @@ for TARGET in "${TARGETS[@]}"; do
     echo "Mirror $MIRROR not found; skipping this target."
     continue
   fi
-
   if mirror_needs_update "$MIRROR"; then
     echo "Updating mirror $MIRROR..."
     mirror_update_with_retry "$MIRROR"
@@ -149,13 +147,6 @@ if (( ${#ACTIVE_MIRRORS[@]} == 0 )); then
   echo "No expected mirrors were found. Nothing to publish."
   exit 1
 fi
-
-# -------------------------------
-# Snapshot names
-# -------------------------------
-SNAP_MAIN="ubuntu-noble-${DATE}"
-SNAP_UPDATES="ubuntu-noble-${DATE}-updates"
-SNAP_SECURITY="ubuntu-noble-${DATE}-security"
 
 # -------------------------------
 # Create snapshots (idempotent)

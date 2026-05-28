@@ -35,12 +35,12 @@ Run this once during initial setup, or again only if you intentionally destroy a
 ### 0.2 `Monthly-aptly-update-publish.sh`
 
 - Checks whether mirrors are older than 24 hours and updates only if needed
-- Creates date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
-- Reuses same-day snapshots if they already exist (idempotent behavior)
+- Creates or reuses date-stamped snapshots: `ubuntu-noble-YYYYMMDD`, `ubuntu-noble-YYYYMMDD-updates`, and `ubuntu-noble-YYYYMMDD-security`
 - Performs the initial publish if no publishes exist yet
 - Uses `aptly publish switch` on later runs when needed
-- Logs all output to `/var/log/aptly` and to stdout
+- Includes a fast no-op path when mirrors are unchanged and publishes already point to today's snapshots
 - Publishes everything under a single component: `main`
+- Logs all stdout/stderr to both console and `/var/log/aptly` (override with `APTLY_LOG_DIR`)
 
 This is the main monthly workflow script.
 
@@ -247,9 +247,10 @@ sudo ./Monthly-aptly-update-publish.sh
 ```
 
 - Updates mirrors only if they are older than 24 hours
-- Creates date-stamped snapshots for the current day (or reuses same-day snapshots)
+- Creates or reuses snapshots with the current date
 - Uses `aptly publish switch` to move `noble`, `noble-updates`, and `noble-security` to current snapshots when required
-- Writes a timestamped execution log under `/var/log/aptly`
+- Exits early with no switch when everything is already current
+- Writes a timestamped run log to `/var/log/aptly`
 
 ### 4.2 Validate
 
