@@ -11,6 +11,8 @@ set -euo pipefail
 # - Fixed initial publish detection to check for real published entries,
 #   preventing publish switch from running when nothing is published yet.
 # - Initial publish flow now correctly uses needs_initial_publish().
+# - Added coarse percentage progress reporting across script phases.
+# - Added auto-bootstrap for missing mirrors during monthly runs.
 # ============================================
 
 CONFIG="${APTLY_CONFIG:-/etc/aptly/aptly.conf}"
@@ -18,6 +20,9 @@ DATE="$(date +%Y%m%d)"
 MAX_AGE_SECONDS=$((24 * 60 * 60))
 LOG_DIR="${APTLY_LOG_DIR:-/var/log/aptly}"
 LOG_FILE="${LOG_DIR}/monthly-aptly-update-publish-$(date +%Y%m%d-%H%M%S).log"
+
+PROGRESS_TOTAL=0
+PROGRESS_DONE=0
 
 # Set up unified logging so all script output is visible and persisted.
 setup_logging() {
@@ -28,6 +33,32 @@ setup_logging() {
 }
 
 setup_logging
+
+# -------------------------------
+# Progress helpers
+# -------------------------------
+progress_init() {
+  PROGRESS_TOTAL="$1"
+  PROGRESS_DONE=0
+}
+
+progress_tick() {
+  local message="$1"
+
+  PROGRESS_DONE=$(( PROGRESS_DONE + 1 ))
+  if (( PROGRESS_TOTAL > 0 )); then
+    local percent
+    percent=$(( (PROGRESS_DONE * 100) / PROGRESS_TOTAL ))
+    echo "[${percent}%] (${PROGRESS_DONE}/${PROGRESS_TOTAL}) ${message}"
+  else
+    echo "[0%] (0/0) ${message}"
+  fi
+}
+
+progress_note_long_step() {
+  local message="$1"
+  echo "[....] ${message} (long-running aptly step; internal percentage not exposed by aptly)"
+}
 
 # -------------------------------
 # Check if mirror needs update
@@ -114,21 +145,32 @@ publish_uses_snapshot() {
 MIRRORS_UPDATED=false
 
 TARGETS=(
-  "ubuntu-noble|noble|"
-  "ubuntu-noble-updates|noble-updates|-updates"
-  "ubuntu-noble-security|noble-security|-security"
+  "ubuntu-noble|noble||http://archive.ubuntu.com/ubuntu|main,restricted,universe,multiverse"
+  "ubuntu-noble-updates|noble-updates|-updates|http://archive.ubuntu.com/ubuntu|main,restricted"
+  "ubuntu-noble-security|noble-security|-security|http://security.ubuntu.com/ubuntu|main,restricted"
 )
 
 ACTIVE_MIRRORS=()
 ACTIVE_DISTS=()
 ACTIVE_SNAPS=()
 
+# We track mirror handling per configured target. Snapshot + publish steps are
+# added later once we know which mirrors actually exist.
+progress_init "${#TARGETS[@]}"
+
 for TARGET in "${TARGETS[@]}"; do
-  IFS='|' read -r MIRROR DIST SUFFIX <<< "$TARGET"
+  IFS='|' read -r MIRROR DIST SUFFIX MIRROR_URL MIRROR_COMPONENTS <<< "$TARGET"
 
   if ! mirror_exists "$MIRROR"; then
-    echo "Mirror $MIRROR not found; skipping this target."
-    continue
+    echo "Mirror $MIRROR not found; auto-bootstrapping..."
+    IFS=',' read -r -a COMPONENTS <<< "$MIRROR_COMPONENTS"
+    aptly -config="$CONFIG" \
+      -architectures=amd64 \
+      mirror create "$MIRROR" \
+      "$MIRROR_URL" \
+      "$DIST" \
+      "${COMPONENTS[@]}"
+    MIRRORS_UPDATED=true
   fi
   if mirror_needs_update "$MIRROR"; then
     echo "Updating mirror $MIRROR..."
@@ -141,6 +183,8 @@ for TARGET in "${TARGETS[@]}"; do
   ACTIVE_MIRRORS+=("$MIRROR")
   ACTIVE_DISTS+=("$DIST")
   ACTIVE_SNAPS+=("ubuntu-noble-${DATE}${SUFFIX}")
+
+  progress_tick "Mirror stage complete for ${MIRROR}"
 done
 
 if (( ${#ACTIVE_MIRRORS[@]} == 0 )); then
@@ -148,11 +192,16 @@ if (( ${#ACTIVE_MIRRORS[@]} == 0 )); then
   exit 1
 fi
 
+# Reset and track only actionable work from this point onward.
+# Stages per active distribution: snapshot + publish/switch.
+progress_init "$(( ${#ACTIVE_MIRRORS[@]} + ${#ACTIVE_DISTS[@]} ))"
+
 # -------------------------------
 # Create snapshots (idempotent)
 # -------------------------------
 for i in "${!ACTIVE_MIRRORS[@]}"; do
   create_snapshot_if_missing "${ACTIVE_SNAPS[$i]}" "${ACTIVE_MIRRORS[$i]}"
+  progress_tick "Snapshot stage complete for ${ACTIVE_SNAPS[$i]}"
 done
 
 # -------------------------------
@@ -163,12 +212,14 @@ if needs_initial_publish; then
   echo "Performing **initial publish** of all distributions..."
 
   for i in "${!ACTIVE_DISTS[@]}"; do
+    progress_note_long_step "Starting initial publish for ${ACTIVE_DISTS[$i]} using ${ACTIVE_SNAPS[$i]}"
     aptly -config="$CONFIG" publish snapshot \
       -component=main \
       -architectures=amd64 \
       -distribution="${ACTIVE_DISTS[$i]}" \
       "${ACTIVE_SNAPS[$i]}" \
       ubuntu
+    progress_tick "Initial publish complete for ${ACTIVE_DISTS[$i]}"
   done
 
   echo "Initial publish complete."
@@ -185,6 +236,7 @@ if [[ "$MIRRORS_UPDATED" == "false" ]]; then
   done
 
   if [[ "$ALL_CURRENT" == "true" ]]; then
+    echo "[100%] (no switch needed)"
     echo "All publishes already point to today's snapshots and mirrors were unchanged; no switch needed."
     exit 0
   fi
@@ -196,12 +248,14 @@ fi
 echo "Switching published repos to new snapshots..."
 
 for i in "${!ACTIVE_DISTS[@]}"; do
+  progress_note_long_step "Starting publish switch for ${ACTIVE_DISTS[$i]} to ${ACTIVE_SNAPS[$i]}"
   aptly -config="$CONFIG" publish switch \
     -component=main \
     -architectures=amd64 \
     "${ACTIVE_DISTS[$i]}" \
     ubuntu \
     "${ACTIVE_SNAPS[$i]}"
+  progress_tick "Publish switch complete for ${ACTIVE_DISTS[$i]}"
 done
 
 echo "Publish switch complete."
