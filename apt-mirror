@@ -1,0 +1,28 @@
+server {
+    listen 8888;
+    listen [::]:8888;
+    server_name 192.168.118.200;
+
+    access_log /var/log/nginx/apt-mirror_access.log;
+    error_log /var/log/nginx/apt-mirror_error.log warn;
+
+    root /srv/public;
+
+    location = / {
+        return 302 /ubuntu/;
+    }
+
+    location /ubuntu/ {
+        alias /srv/public/ubuntu/;
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+
+        types {
+            application/vnd.debian.binary-package deb udeb;
+        }
+        default_type application/octet-stream;
+
+        try_files $uri $uri/ =404;
+    }
+}
